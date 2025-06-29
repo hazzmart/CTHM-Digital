@@ -1640,7 +1640,7 @@
             });
         });
         
-        // Simple email-based form submission (guaranteed to work)
+        // HubSpot CRM Integration (works with free plan)
         document.getElementById('leadForm').addEventListener('submit', function(e) {
             e.preventDefault();
             
@@ -1655,66 +1655,158 @@
             // Collect form data
             const formData = new FormData(form);
             
-            // Create email content
-            const emailSubject = 'New CTHM Digital Lead - Free Trial Request';
-            const emailBody = `
-New lead from CTHM Digital website:
-
-Name: ${formData.get('name')}
-Email: ${formData.get('email')}
-Phone: ${formData.get('phone') || 'Not provided'}
-Business Type: ${formData.get('business_type') || 'Not specified'}
-Experience: ${formData.get('experience_level') || 'Not specified'}
-Additional Info: ${formData.get('description') || 'None provided'}
-
-Source: cthm-website
-Campaign: free-trial-2024
-Timestamp: ${new Date().toISOString()}
-Page URL: ${window.location.href}
-            `.trim();
-            
-            // Create mailto link
-            const mailtoLink = `mailto:martin.harrison95@gmail.com?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
-            
-            // Store lead data locally as backup
-            const leadData = {
-                name: formData.get('name'),
-                email: formData.get('email'),
-                phone: formData.get('phone'),
-                business_type: formData.get('business_type'),
-                experience_level: formData.get('experience_level'),
-                description: formData.get('description'),
-                timestamp: new Date().toISOString(),
-                source: 'cthm-website'
+            // Prepare data for HubSpot API
+            const hubspotData = {
+                properties: {
+                    firstname: formData.get('name').split(' ')[0] || '',
+                    lastname: formData.get('name').split(' ').slice(1).join(' ') || '',
+                    email: formData.get('email'),
+                    phone: formData.get('phone') || '',
+                    company: 'CTHM Digital Lead',
+                    business_type: formData.get('business_type') || '',
+                    experience_level: formData.get('experience_level') || '',
+                    description: formData.get('description') || '',
+                    lead_status: 'NEW',
+                    source: 'cthm-website',
+                    campaign: 'free-trial-2024'
+                }
             };
             
-            localStorage.setItem('cthm_lead_' + Date.now(), JSON.stringify(leadData));
+            // Method 1: Try HubSpot API (requires API key)
+            const submitToHubSpot = async () => {
+                try {
+                    // You'll need to get your HubSpot API key from Settings > Account Setup > Integrations > API Keys
+                    const response = await fetch('https://api.hubapi.com/crm/v3/objects/contacts', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer YOUR_HUBSPOT_API_KEY' // You'll need to replace this
+                        },
+                        body: JSON.stringify(hubspotData)
+                    });
+                    
+                    if (response.ok) {
+                        return { success: true, method: 'hubspot' };
+                    } else {
+                        throw new Error(`HubSpot API Error: ${response.status}`);
+                    }
+                } catch (error) {
+                    console.log('HubSpot API submission failed:', error);
+                    return { success: false, error };
+                }
+            };
             
-            // Show success message with email option
+            // Method 2: Fallback - Email with HubSpot formatting
+            const submitViaEmail = async () => {
+                try {
+                    const emailSubject = 'New CTHM Digital Lead - HubSpot Import';
+                    const emailBody = `
+New lead from CTHM Digital website for HubSpot CRM import:
+
+Contact Information:
+- First Name: ${hubspotData.properties.firstname}
+- Last Name: ${hubspotData.properties.lastname}
+- Email: ${hubspotData.properties.email}
+- Phone: ${hubspotData.properties.phone}
+
+Business Information:
+- Business Type: ${hubspotData.properties.business_type}
+- Experience Level: ${hubspotData.properties.experience_level}
+- Additional Info: ${hubspotData.properties.description}
+
+Lead Details:
+- Source: ${hubspotData.properties.source}
+- Campaign: ${hubspotData.properties.campaign}
+- Status: ${hubspotData.properties.lead_status}
+- Timestamp: ${new Date().toISOString()}
+- Page URL: ${window.location.href}
+
+Instructions for HubSpot Import:
+1. Go to Contacts > Import
+2. Copy this data and import as new contacts
+3. Tag as "Free Trial Request"
+4. Set lead status to "New"
+                    `.trim();
+                    
+                    // Create mailto link
+                    const mailtoLink = `mailto:martin.harrison95@gmail.com?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+                    
+                    // Store lead data locally as backup
+                    localStorage.setItem('cthm_lead_' + Date.now(), JSON.stringify(hubspotData.properties));
+                    
+                    // Show success message with email option
+                    form.innerHTML = `
+                        <div class="success-message" style="text-align: center; padding: 2rem;">
+                            <h3 style="color: #10b981; margin-bottom: 1rem;">🎉 Thank You!</h3>
+                            <p style="margin-bottom: 1rem;">Your information has been saved and formatted for HubSpot CRM.</p>
+                            <div style="margin: 1rem 0;">
+                                <a href="${mailtoLink}" class="cta-button" style="display: inline-block; margin: 0.5rem;">
+                                    📧 Send to HubSpot CRM
+                                </a>
+                            </div>
+                            <p style="font-size: 0.9rem; color: #cbd5e1; margin-top: 1rem;">
+                                Click the button above to send your information to our CRM system.
+                            </p>
+                            <p style="font-size: 0.8rem; color: #64748b; margin-top: 0.5rem;">
+                                We'll be in touch within 24 hours to get you started with CTHM Digital.
+                            </p>
+                        </div>
+                    `;
+                    
+                    return { success: true, method: 'email' };
+                } catch (error) {
+                    console.log('Email submission failed:', error);
+                    return { success: false, error };
+                }
+            };
+            
+            // Execute submission methods
+            submitToHubSpot()
+                .then(result => {
+                    if (result.success) {
+                        showSuccessMessage('Thank you! Your information has been added to our HubSpot CRM.');
+                        return;
+                    }
+                    return submitViaEmail();
+                })
+                .catch(error => {
+                    console.error('All submission methods failed:', error);
+                    showErrorMessage('We\'re experiencing technical difficulties. Please contact us directly at martin.harrison95@gmail.com to complete your trial setup.');
+                })
+                .finally(() => {
+                    // Reset button
+                    submitBtn.textContent = originalText;
+                    submitBtn.disabled = false;
+                });
+        });
+        
+        function showSuccessMessage(message) {
+            const form = document.getElementById('leadForm');
             form.innerHTML = `
                 <div class="success-message" style="text-align: center; padding: 2rem;">
                     <h3 style="color: #10b981; margin-bottom: 1rem;">🎉 Thank You!</h3>
-                    <p style="margin-bottom: 1rem;">Your information has been saved. To complete your trial setup, please:</p>
-                    <div style="margin: 1rem 0;">
-                        <a href="${mailtoLink}" class="cta-button" style="display: inline-block; margin: 0.5rem;">
-                            📧 Send Email Request
-                        </a>
-                    </div>
-                    <p style="font-size: 0.9rem; color: #cbd5e1; margin-top: 1rem;">
-                        Or contact us directly at: <strong>martin.harrison95@gmail.com</strong>
-                    </p>
-                    <p style="font-size: 0.8rem; color: #64748b; margin-top: 0.5rem;">
-                        We'll be in touch within 24 hours to get you started with CTHM Digital.
-                    </p>
+                    <p style="margin-bottom: 1rem;">${message}</p>
+                    <p style="font-size: 0.9rem; color: #cbd5e1;">We'll be in touch within 24 hours to get you started with CTHM Digital.</p>
                 </div>
             `;
+        }
+        
+        function showErrorMessage(message) {
+            const form = document.getElementById('leadForm');
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.style.cssText = 'color: #ef4444; background: #fef2f2; border: 1px solid #fecaca; padding: 1rem; border-radius: 6px; margin-top: 1rem; text-align: center;';
+            errorDiv.textContent = message;
             
-            // Reset button (in case user wants to submit again)
+            form.appendChild(errorDiv);
+            
+            // Remove error message after 10 seconds
             setTimeout(() => {
-                submitBtn.textContent = originalText;
-                submitBtn.disabled = false;
-            }, 1000);
-        });
+                if (errorDiv.parentNode) {
+                    errorDiv.remove();
+                }
+            }, 10000);
+        }
     </script>
 </body>
 </html>
